@@ -78,6 +78,51 @@ def momentum_score(change_1d, change_5d, change_1m, change_3m, relvol, mcap_msek
     return round(max(0, min(100, score)), 1)
 
 
+def patch_signal_ui(html):
+    """Install the deterministic momentum signal UI once and keep it stable across refreshes."""
+    if "function tradeSignal(s)" in html:
+        return html
+
+    html = html.replace(
+        "Screening — inte köp- eller säljsignaler.",
+        "Regelbaserade momentum-signaler för screening — inte personlig investeringsrådgivning.",
+    )
+    html = html.replace(
+        ".footer{margin:20px 0;color:var(--muted);font-size:12px;line-height:1.5}",
+        ".signal{display:inline-flex;align-items:center;justify-content:center;min-width:74px;padding:6px 9px;border-radius:999px;font-size:11px;font-weight:850;letter-spacing:.04em}.sig-buy{background:#e3f2e9;color:#245c43;border:1px solid #b9d9c6}.sig-wait{background:#fff3dc;color:#8a5a13;border:1px solid #ead19f}.sig-sell{background:#fbe7e5;color:#983a34;border:1px solid #e7bbb7}.footer{margin:20px 0;color:var(--muted);font-size:12px;line-height:1.5}",
+    )
+    html = html.replace(
+        "<th>Momentumscore</th><th>Varför?</th>",
+        "<th>Momentumscore</th><th>Signal</th><th>Varför?</th>",
+    )
+
+    signal_js = r'''function tradeSignal(s){
+  const d1=Number(s.change||0),d5=Number(s.change5d||0),m1=Number(s.change1m||0),m3=Number(s.change3m||0),rv=Number(s.relvol||0);
+  let pts=0; const why=[];
+  if(d5>=10){pts+=2;why.push("starkt 5D")}else if(d5>=3){pts+=1;why.push("positivt 5D")}else if(d5<=-5){pts-=2;why.push("svagt 5D")}
+  if(m1>=15){pts+=2;why.push("starkt 1M")}else if(m1>=3){pts+=1;why.push("positivt 1M")}else if(m1<=-10){pts-=2;why.push("svagt 1M")}else if(m1<0){pts-=1;why.push("negativt 1M")}
+  if(m3>=25){pts+=2;why.push("starkt 3M")}else if(m3>=5){pts+=1;why.push("positivt 3M")}else if(m3<=-15){pts-=2;why.push("svagt 3M")}else if(m3<0){pts-=1;why.push("negativt 3M")}
+  if(rv>=2){pts+=2;why.push("volym bekräftar")}else if(rv>=1){pts+=1;why.push("normal+ volym")}else if(rv<0.5){pts-=1;why.push("svag volym")}
+  if(d1>35){pts-=2;why.push("överhettad 1D")}if(d1>70){pts-=2;why.push("extrem 1D")}
+  if(d1>15&&rv<0.7){pts-=2;why.push("rörelse utan volymstöd")}
+  if(d1<-3){pts-=1;why.push("negativ dag")}
+  let label=pts>=5?"KÖP":pts<=-2?"SÄLJ":"AVVAKTA";
+  if(d1>50&&label==="KÖP"){label="AVVAKTA";why.push("jaga inte extrem dagsrörelse")}
+  const cls=label==="KÖP"?"sig-buy":label==="SÄLJ"?"sig-sell":"sig-wait";
+  return {label,cls,pts,reason:why.join(" · ")||"blandad signal"};
+}
+'''
+    html = html.replace("function fmtCap(v)", signal_js + "function fmtCap(v)")
+
+    old = '<td><span class="score">${s.score}</span><div class="bar"><i style="width:${s.score}%"></i></div></td><td>${s.change>=10?`<button class="whybtn" onclick="toggleWhy(\'why-${i}\')">Visa orsak</button>`:"—"}</td><td><span class="pill">${s.sector}</span></td></tr>'
+    new = '<td><span class="score">${s.score}</span><div class="bar"><i style="width:${s.score}%"></i></div></td><td>${(()=>{const sig=tradeSignal(s);return `<span class="signal ${sig.cls}" title="Signalpoäng ${sig.pts}: ${sig.reason}">${sig.label}</span>`})()}</td><td>${s.change>=10?`<button class="whybtn" onclick="toggleWhy(\'why-${i}\')">Visa orsak</button>`:"—"}</td><td><span class="pill">${s.sector}</span></td></tr>'
+    if old not in html:
+        raise SystemExit("Could not install signal cell in dashboard row template")
+    html = html.replace(old, new, 1)
+    html = html.replace('colspan="11"', 'colspan="12"')
+    return html
+
+
 payload = {
     "markets": ["sweden"],
     "symbols": {"query": {"types": []}, "tickers": []},
@@ -237,12 +282,13 @@ html = re.sub(
 )
 html = re.sub(
     r'<div class="footer">.*?</div>',
-    '<div class="footer">Datakälla: TradingView Swedish market scanner. Momentum Radar räknar en egen aggressiv ranking från dagsrörelse, 5D/1M/3M performance, relativ volym och bolagsstorlek. Data kan vara fördröjd och ska användas som screening, inte exekveringskurs. First North-status verifieras ännu inte separat.</div>',
+    '<div class="footer">Datakälla: TradingView Swedish market scanner. Momentum Radar räknar en egen aggressiv ranking från dagsrörelse, 5D/1M/3M performance, relativ volym och bolagsstorlek. KÖP / AVVAKTA / SÄLJ är en deterministisk teknisk screening-signal, inte personlig investeringsrådgivning. Data kan vara fördröjd och ska inte användas som exekveringskurs. First North-status verifieras ännu inte separat.</div>',
     html,
     count=1,
     flags=re.S,
 )
 
+html = patch_signal_ui(html)
 INDEX.write_text(html, encoding="utf-8")
 print(
     f"Updated {len(stocks)} stocks from {len(candidates)} Swedish candidates; "
