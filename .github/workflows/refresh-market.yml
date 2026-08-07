@@ -9,14 +9,13 @@ on:
       - 'scripts/update_nasdaq.py'
       - 'scripts/patch_nasdaq_ui.py'
       - 'scripts/patch_nasdaq_layout.py'
+      - 'scripts/patch_nasdaq_view_toggle.py'
       - 'scripts/catalyst_intelligence.py'
       - 'scripts/patch_catalyst_signal.py'
       - 'scripts/apply_reference_design.py'
       - 'scripts/patch_market_navigation.py'
       - '.github/workflows/refresh-market.yml'
   schedule:
-    # Every 15 minutes across Stockholm + US market coverage, Monday-Friday.
-    # The broader UTC window keeps both market radars fresh across CET/CEST and ET/EDT.
     - cron: '*/15 7-21 * * 1-5'
 
 permissions:
@@ -59,6 +58,9 @@ jobs:
 
       - name: Apply approved NASDAQ reference layout
         run: python scripts/patch_nasdaq_layout.py
+
+      - name: Install real NASDAQ table compact toggle
+        run: python scripts/patch_nasdaq_view_toggle.py
 
       - name: Commit refreshed dashboards
         run: |
