@@ -44,25 +44,25 @@ function tradeSignal(s){
   if(cat.delta!==0)why.push(cat.reason);
 
   let label=pts>=5?"KÖP":pts<=-2?"SÄLJ":"AVVAKTA";
-  // Never let even a strong catalyst turn an extreme same-day chase into KÖP.
   if(d1>50&&label==="KÖP"){label="AVVAKTA";why.push("anti-FOMO: extrem dagsrörelse")}
-  // Financing cannot upgrade a weak/neutral technical setup to KÖP.
   if(cat.delta<0&&technicalPts<5&&label==="KÖP"){label="AVVAKTA";why.push("negativ katalysator blockerar uppgradering")}
   const cls=label==="KÖP"?"sig-buy":label==="SÄLJ"?"sig-sell":"sig-wait";
   return {label,cls,pts,technicalPts,catalystDelta:cat.delta,reason:why.join(" · ")||"blandad signal"};
 }'''
 
 html = INDEX.read_text(encoding="utf-8")
-pattern = r"function tradeSignal\(s\)\{.*?\n\}\nfunction fmtCap"
+pattern = r"function (?:catalystImpact\(s\)\{.*?\n\})?\s*function tradeSignal\(s\)\{.*?\n\}\nfunction fmtCap"
 replacement = TRADE_SIGNAL + "\nfunction fmtCap"
-html, count = re.subn(pattern, replacement, html, count=1, flags=re.S)
+# Use a callable replacement so JavaScript backslashes are never parsed as Python re replacement escapes.
+html, count = re.subn(pattern, lambda _m: replacement, html, count=1, flags=re.S)
 if count != 1:
     raise SystemExit("Could not patch tradeSignal in index.html")
 
-# Make the tooltip explicitly show technical vs catalyst contribution.
-html = html.replace(
-    'title="Signalpoäng ${sig.pts}: ${sig.reason}"',
+html = re.sub(
+    r'title="(?:Signalpoäng|Signal) [^"]*"',
     'title="Signal ${sig.pts} · teknisk ${sig.technicalPts} · katalysator ${sig.catalystDelta>=0?\"+\":\"\"}${sig.catalystDelta}: ${sig.reason}"',
+    html,
+    count=1,
 )
 INDEX.write_text(html, encoding="utf-8")
 print("Catalyst-aware signal model installed")
