@@ -2,6 +2,10 @@
 
 Interaktiv high-risk momentumscanner för svenska aktier, med fokus på snabb kursrörelse, relativ volym, små-/tillväxtbolag och tydliga riskflaggor.
 
+## Live
+
+https://greenark-ben.github.io/sweden-momentum-radar/
+
 ## Funktioner
 
 - Topplista över snabb-rörliga svenska aktier
@@ -13,7 +17,7 @@ Interaktiv high-risk momentumscanner för svenska aktier, med fokus på snabb ku
 
 ## Hosting
 
-Appen är byggd som en statisk webbapp och kan hostas direkt via GitHub Pages från `main`-branchen och repository root.
+Appen är byggd som en statisk webbapp och hostas via GitHub Pages från `main`-branchen och repository root. `.nojekyll` används för att hålla deployen helt statisk och förutsägbar.
 
 ## Viktigt
 
