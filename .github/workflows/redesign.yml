@@ -1,0 +1,38 @@
+name: Deploy dark radar UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/redesign_ui.py'
+      - '.github/workflows/redesign.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: radar-ui-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dark radar terminal UI
+        run: python scripts/redesign_ui.py
+      - name: Commit redesigned dashboard
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "Dark radar UI already installed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Deploy dark Momentum Radar UI"
+          git push
