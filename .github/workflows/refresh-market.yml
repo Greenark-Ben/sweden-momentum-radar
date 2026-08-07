@@ -8,6 +8,7 @@ on:
       - 'scripts/update_market.py'
       - 'scripts/update_nasdaq.py'
       - 'scripts/patch_nasdaq_ui.py'
+      - 'scripts/patch_nasdaq_layout.py'
       - 'scripts/catalyst_intelligence.py'
       - 'scripts/patch_catalyst_signal.py'
       - 'scripts/apply_reference_design.py'
@@ -55,6 +56,9 @@ jobs:
 
       - name: Correct NASDAQ units and filters
         run: python scripts/patch_nasdaq_ui.py
+
+      - name: Apply approved NASDAQ reference layout
+        run: python scripts/patch_nasdaq_layout.py
 
       - name: Commit refreshed dashboards
         run: |
