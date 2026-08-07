@@ -7,6 +7,7 @@ on:
     paths:
       - 'scripts/update_market.py'
       - 'scripts/update_nasdaq.py'
+      - 'scripts/patch_nasdaq_ui.py'
       - 'scripts/catalyst_intelligence.py'
       - 'scripts/patch_catalyst_signal.py'
       - 'scripts/apply_reference_design.py'
@@ -51,6 +52,9 @@ jobs:
 
       - name: Generate NASDAQ Top 50 radar
         run: python scripts/update_nasdaq.py
+
+      - name: Correct NASDAQ units and filters
+        run: python scripts/patch_nasdaq_ui.py
 
       - name: Commit refreshed dashboards
         run: |
