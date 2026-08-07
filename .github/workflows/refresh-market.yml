@@ -6,14 +6,16 @@ on:
     branches: [main]
     paths:
       - 'scripts/update_market.py'
+      - 'scripts/update_nasdaq.py'
       - 'scripts/catalyst_intelligence.py'
       - 'scripts/patch_catalyst_signal.py'
       - 'scripts/apply_reference_design.py'
+      - 'scripts/patch_market_navigation.py'
       - '.github/workflows/refresh-market.yml'
   schedule:
-    # Every 15 minutes around Stockholm market hours, Monday-Friday.
-    # UTC window intentionally covers both CET and CEST trading hours.
-    - cron: '*/15 7-16 * * 1-5'
+    # Every 15 minutes across Stockholm + US market coverage, Monday-Friday.
+    # The broader UTC window keeps both market radars fresh across CET/CEST and ET/EDT.
+    - cron: '*/15 7-21 * * 1-5'
 
 permissions:
   contents: write
@@ -25,7 +27,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +35,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Refresh delayed-live Stockholm data
+      - name: Refresh Swedish market radar
         env:
           EODHD_API_TOKEN: ${{ secrets.EODHD_API_TOKEN }}
         run: python scripts/update_market.py
@@ -44,14 +46,20 @@ jobs:
       - name: Apply approved light reference design
         run: python scripts/apply_reference_design.py
 
-      - name: Commit refreshed dashboard
+      - name: Install multi-market navigation
+        run: python scripts/patch_market_navigation.py
+
+      - name: Generate NASDAQ Top 50 radar
+        run: python scripts/update_nasdaq.py
+
+      - name: Commit refreshed dashboards
         run: |
-          if git diff --quiet -- index.html; then
+          if git diff --quiet -- index.html nasdaq.html; then
             echo "No dashboard data change"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          git commit -m "Refresh delayed-live market data"
+          git add index.html nasdaq.html
+          git commit -m "Refresh Sweden and NASDAQ market radars"
           git push
