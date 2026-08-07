@@ -51,9 +51,8 @@ function tradeSignal(s){
 }'''
 
 html = INDEX.read_text(encoding="utf-8")
-pattern = r"function (?:catalystImpact\(s\)\{.*?\n\})?\s*function tradeSignal\(s\)\{.*?\n\}\nfunction fmtCap"
+pattern = r"(?:function catalystImpact\(s\)\{.*?\n\}\s*)?function tradeSignal\(s\)\{.*?\n\}\nfunction fmtCap"
 replacement = TRADE_SIGNAL + "\nfunction fmtCap"
-# Use a callable replacement so JavaScript backslashes are never parsed as Python re replacement escapes.
 html, count = re.subn(pattern, lambda _m: replacement, html, count=1, flags=re.S)
 if count != 1:
     raise SystemExit("Could not patch tradeSignal in index.html")
