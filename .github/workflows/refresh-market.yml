@@ -10,6 +10,7 @@ on:
       - 'scripts/patch_nasdaq_ui.py'
       - 'scripts/patch_nasdaq_layout.py'
       - 'scripts/patch_nasdaq_view_toggle.py'
+      - 'scripts/patch_shared_market_ui.py'
       - 'scripts/catalyst_intelligence.py'
       - 'scripts/patch_catalyst_signal.py'
       - 'scripts/apply_reference_design.py'
@@ -61,6 +62,9 @@ jobs:
 
       - name: Install real NASDAQ table compact toggle
         run: python scripts/patch_nasdaq_view_toggle.py
+
+      - name: Enforce shared Sweden/NASDAQ UI parity
+        run: python scripts/patch_shared_market_ui.py
 
       - name: Commit refreshed dashboards
         run: |
