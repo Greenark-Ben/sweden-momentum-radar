@@ -2,6 +2,11 @@ name: Refresh market data
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/update_market.py'
+      - '.github/workflows/refresh-market.yml'
   schedule:
     # Every 15 minutes around Stockholm market hours, Monday-Friday.
     # UTC window intentionally covers both CET and CEST trading hours.
@@ -17,7 +22,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
 
