@@ -4,293 +4,79 @@ import re
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from catalyst_intelligence import find_catalyst
 
 INDEX = Path("index.html")
 TV_URL = "https://scanner.tradingview.com/sweden/scan"
+COLUMNS = ["name","description","close","change","volume","relative_volume_10d_calc","market_cap_basic","price_earnings_ttm","sector","Perf.5D","Perf.1M","Perf.3M","exchange","type","subtype"]
 
-COLUMNS = [
-    "name",
-    "description",
-    "close",
-    "change",
-    "volume",
-    "relative_volume_10d_calc",
-    "market_cap_basic",
-    "price_earnings_ttm",
-    "sector",
-    "Perf.5D",
-    "Perf.1M",
-    "Perf.3M",
-    "exchange",
-    "type",
-    "subtype",
-]
+def post_json(url,payload):
+    body=json.dumps(payload,separators=(",",":")).encode()
+    req=urllib.request.Request(url,data=body,headers={"User-Agent":"Mozilla/5.0 SwedenMomentumRadar/1.0","Accept":"application/json","Content-Type":"application/json","Origin":"https://www.tradingview.com","Referer":"https://www.tradingview.com/"},method="POST")
+    with urllib.request.urlopen(req,timeout=45) as r:return json.loads(r.read().decode())
 
+def number(v,default=0.0):
+    try:return default if v in (None,"","NA","N/A") else float(v)
+    except:return default
 
-def post_json(url, payload):
-    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; SwedenMomentumRadar/1.0)",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Origin": "https://www.tradingview.com",
-            "Referer": "https://www.tradingview.com/",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=45) as response:
-        return json.loads(response.read().decode("utf-8"))
+def volume_label(v):
+    v=number(v)
+    return f"{v/1e6:.2f} M" if v>=1e6 else f"{v/1e3:.1f} K" if v>=1e3 else str(int(v))
 
+def momentum_score(d1,d5,m1,m3,rv,cap):
+    s=min(42,max(0,d1)*1.8)+min(20,max(0,d5)*.7)+min(13,max(0,m1)*.18)+min(8,max(0,m3)*.06)+min(17,math.log2(1+max(0,rv))*5.5)
+    if cap and cap<500:s+=4
+    if cap and cap<100:s+=3
+    if rv<.2:s-=15
+    return round(max(0,min(100,s)),1)
 
-def number(value, default=0.0):
-    try:
-        if value in (None, "", "NA", "N/A"):
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def volume_label(value):
-    value = number(value)
-    if value >= 1_000_000:
-        return f"{value / 1_000_000:.2f} M"
-    if value >= 1_000:
-        return f"{value / 1_000:.1f} K"
-    return str(int(value))
-
-
-def momentum_score(change_1d, change_5d, change_1m, change_3m, relvol, mcap_msek):
-    score = min(42, max(0, change_1d) * 1.8)
-    score += min(20, max(0, change_5d) * 0.7)
-    score += min(13, max(0, change_1m) * 0.18)
-    score += min(8, max(0, change_3m) * 0.06)
-    score += min(17, math.log2(1 + max(0, relvol)) * 5.5)
-    if mcap_msek and mcap_msek < 500:
-        score += 4
-    if mcap_msek and mcap_msek < 100:
-        score += 3
-    if relvol < 0.2:
-        score -= 15
-    return round(max(0, min(100, score)), 1)
-
-
-def patch_signal_ui(html):
-    """Install the deterministic momentum signal UI once and keep it stable across refreshes."""
-    if "function tradeSignal(s)" in html:
-        return html
-
-    html = html.replace(
-        "Screening — inte köp- eller säljsignaler.",
-        "Regelbaserade momentum-signaler för screening — inte personlig investeringsrådgivning.",
-    )
-    html = html.replace(
-        ".footer{margin:20px 0;color:var(--muted);font-size:12px;line-height:1.5}",
-        ".signal{display:inline-flex;align-items:center;justify-content:center;min-width:74px;padding:6px 9px;border-radius:999px;font-size:11px;font-weight:850;letter-spacing:.04em}.sig-buy{background:#e3f2e9;color:#245c43;border:1px solid #b9d9c6}.sig-wait{background:#fff3dc;color:#8a5a13;border:1px solid #ead19f}.sig-sell{background:#fbe7e5;color:#983a34;border:1px solid #e7bbb7}.footer{margin:20px 0;color:var(--muted);font-size:12px;line-height:1.5}",
-    )
-    html = html.replace(
-        "<th>Momentumscore</th><th>Varför?</th>",
-        "<th>Momentumscore</th><th>Signal</th><th>Varför?</th>",
-    )
-
-    signal_js = r'''function tradeSignal(s){
-  const d1=Number(s.change||0),d5=Number(s.change5d||0),m1=Number(s.change1m||0),m3=Number(s.change3m||0),rv=Number(s.relvol||0);
-  let pts=0; const why=[];
-  if(d5>=10){pts+=2;why.push("starkt 5D")}else if(d5>=3){pts+=1;why.push("positivt 5D")}else if(d5<=-5){pts-=2;why.push("svagt 5D")}
-  if(m1>=15){pts+=2;why.push("starkt 1M")}else if(m1>=3){pts+=1;why.push("positivt 1M")}else if(m1<=-10){pts-=2;why.push("svagt 1M")}else if(m1<0){pts-=1;why.push("negativt 1M")}
-  if(m3>=25){pts+=2;why.push("starkt 3M")}else if(m3>=5){pts+=1;why.push("positivt 3M")}else if(m3<=-15){pts-=2;why.push("svagt 3M")}else if(m3<0){pts-=1;why.push("negativt 3M")}
-  if(rv>=2){pts+=2;why.push("volym bekräftar")}else if(rv>=1){pts+=1;why.push("normal+ volym")}else if(rv<0.5){pts-=1;why.push("svag volym")}
-  if(d1>35){pts-=2;why.push("överhettad 1D")}if(d1>70){pts-=2;why.push("extrem 1D")}
-  if(d1>15&&rv<0.7){pts-=2;why.push("rörelse utan volymstöd")}
-  if(d1<-3){pts-=1;why.push("negativ dag")}
-  let label=pts>=5?"KÖP":pts<=-2?"SÄLJ":"AVVAKTA";
-  if(d1>50&&label==="KÖP"){label="AVVAKTA";why.push("jaga inte extrem dagsrörelse")}
-  const cls=label==="KÖP"?"sig-buy":label==="SÄLJ"?"sig-sell":"sig-wait";
-  return {label,cls,pts,reason:why.join(" · ")||"blandad signal"};
-}
-'''
-    html = html.replace("function fmtCap(v)", signal_js + "function fmtCap(v)")
-
-    old = '<td><span class="score">${s.score}</span><div class="bar"><i style="width:${s.score}%"></i></div></td><td>${s.change>=10?`<button class="whybtn" onclick="toggleWhy(\'why-${i}\')">Visa orsak</button>`:"—"}</td><td><span class="pill">${s.sector}</span></td></tr>'
-    new = '<td><span class="score">${s.score}</span><div class="bar"><i style="width:${s.score}%"></i></div></td><td>${(()=>{const sig=tradeSignal(s);return `<span class="signal ${sig.cls}" title="Signalpoäng ${sig.pts}: ${sig.reason}">${sig.label}</span>`})()}</td><td>${s.change>=10?`<button class="whybtn" onclick="toggleWhy(\'why-${i}\')">Visa orsak</button>`:"—"}</td><td><span class="pill">${s.sector}</span></td></tr>'
-    if old not in html:
-        raise SystemExit("Could not install signal cell in dashboard row template")
-    html = html.replace(old, new, 1)
-    html = html.replace('colspan="11"', 'colspan="12"')
+def patch_catalyst_ui(html):
+    if ".cat-strength" not in html:
+        html=html.replace(".footer{margin:20px 0", ".cat-strength{display:inline-block;margin-left:8px;padding:3px 7px;border-radius:999px;background:#e8eee9;color:#315c49;font-size:10px;font-weight:800}.cat-link{display:inline-block;margin-top:8px;font-size:11px;font-weight:750;color:var(--forest);text-decoration:none}.cat-link:hover{text-decoration:underline}.footer{margin:20px 0")
     return html
 
-
-payload = {
-    "markets": ["sweden"],
-    "symbols": {"query": {"types": []}, "tickers": []},
-    "options": {"lang": "en"},
-    "columns": COLUMNS,
-    "filter": [
-        {"left": "type", "operation": "equal", "right": "stock"},
-        {"left": "change", "operation": "greater", "right": -5},
-    ],
-    "sort": {"sortBy": "change", "sortOrder": "desc"},
-    "range": [0, 300],
-}
-
-try:
-    response = post_json(TV_URL, payload)
+payload={"markets":["sweden"],"symbols":{"query":{"types":[]},"tickers":[]},"options":{"lang":"en"},"columns":COLUMNS,"filter":[{"left":"type","operation":"equal","right":"stock"},{"left":"change","operation":"greater","right":-5}],"sort":{"sortBy":"change","sortOrder":"desc"},"range":[0,300]}
+try:response=post_json(TV_URL,payload)
 except Exception as exc:
-    print(f"warning: TradingView scanner unavailable: {exc}")
-    raise SystemExit(0)
-
-rows = response.get("data", []) if isinstance(response, dict) else []
-if not rows:
-    print("warning: TradingView scanner returned no Swedish rows; keeping current dashboard")
-    raise SystemExit(0)
-
-candidates = []
+    print(f"warning: TradingView unavailable: {exc}");raise SystemExit(0)
+rows=response.get("data",[]) if isinstance(response,dict) else []
+candidates=[]
 for row in rows:
-    symbol = str(row.get("s") or "")
-    values = row.get("d") or []
-    if not symbol or len(values) != len(COLUMNS):
-        continue
-
-    d = dict(zip(COLUMNS, values))
-    ticker = str(d.get("name") or symbol.split(":")[-1]).strip()
-    description = str(d.get("description") or ticker).strip()
-    price = number(d.get("close"), None)
-    if price is None or price <= 0:
-        continue
-
-    change_1d = number(d.get("change"))
-    change_5d = number(d.get("Perf.5D"))
-    change_1m = number(d.get("Perf.1M"))
-    change_3m = number(d.get("Perf.3M"))
-    volume = number(d.get("volume"))
-    relvol = number(d.get("relative_volume_10d_calc"))
-    market_cap_sek = number(d.get("market_cap_basic"), None)
-    mcap_msek = market_cap_sek / 1_000_000 if market_cap_sek else None
-    pe = number(d.get("price_earnings_ttm"), None)
-    sector = str(d.get("sector") or d.get("exchange") or "Sweden")
-
-    if volume < 250 and relvol < 0.5:
-        continue
-
-    candidates.append(
-        {
-            "ticker": ticker,
-            "name": description,
-            "change": change_1d,
-            "change_5d": change_5d,
-            "change_1m": change_1m,
-            "change_3m": change_3m,
-            "price": price,
-            "volume_raw": volume,
-            "relvol": relvol,
-            "mcap": mcap_msek,
-            "pe": pe,
-            "sector": sector,
-            "exchange": str(d.get("exchange") or ""),
-            "_score": momentum_score(
-                change_1d, change_5d, change_1m, change_3m, relvol, mcap_msek
-            ),
-        }
-    )
-
-positive = [item for item in candidates if item["change"] > 0]
-pool = positive if len(positive) >= 20 else candidates
-selected = sorted(
-    pool,
-    key=lambda item: (item["_score"], item["change"], item["relvol"]),
-    reverse=True,
-)[:20]
-
-if not selected:
-    print("warning: no eligible Swedish momentum candidates; keeping current dashboard")
-    raise SystemExit(0)
-
-stocks = []
-catalysts = {}
-
-for item in selected:
-    stocks.append(
-        {
-            "ticker": item["ticker"],
-            "name": item["name"],
-            "change": round(item["change"], 2),
-            "change5d": round(item["change_5d"], 2),
-            "change1m": round(item["change_1m"], 2),
-            "change3m": round(item["change_3m"], 2),
-            "price": round(item["price"], 4),
-            "volume": volume_label(item["volume_raw"]),
-            "relvol": round(item["relvol"], 2),
-            "mcap": round(item["mcap"], 2) if item["mcap"] else None,
-            "pe": round(item["pe"], 2) if item["pe"] else None,
-            "sector": item["sector"],
-        }
-    )
-
-    ticker = item["ticker"]
-    if item["change"] >= 10 and item["relvol"] >= 2:
-        catalysts[ticker] = [
-            "Volymexplosion",
-            "Medel",
-            f"Aktien stiger {item['change']:.1f}% med relativ volym {item['relvol']:.1f}x. Pris och handelsaktivitet bekräftar starkt momentum; exakt nyhetsorsak kräver separat nyhetsfeed.",
-            "Pris/volymklassificering från TradingView scanner-data.",
-        ]
-    elif item["change"] >= 10 and item["relvol"] < 0.5:
-        catalysts[ticker] = [
-            "Likviditetsdriven rörelse",
-            "Medel",
-            f"Aktien stiger {item['change']:.1f}% men relativ volym är bara {item['relvol']:.2f}x. Tunn handel kan förstora procentförändringen.",
-            "Pris/volymklassificering — inte en verifierad nyhetsorsak.",
-        ]
-    elif item["change"] >= 10:
-        catalysts[ticker] = [
-            "Momentum utan verifierad nyhetsorsak",
-            "Låg",
-            f"Aktien stiger {item['change']:.1f}%. Rörelsen är verifierad, men dashboarden gissar inte vilken bolagshändelse som orsakade den.",
-            "En separat nyhetsfeed behövs för säker katalysatoridentifiering.",
-        ]
-
-html = INDEX.read_text(encoding="utf-8")
-html, raw_count = re.subn(
-    r"const raw = \[.*?\];\s*const catalysts=",
-    "const raw = " + json.dumps(stocks, ensure_ascii=False, separators=(",", ":")) + ";\nconst catalysts=",
-    html,
-    count=1,
-    flags=re.S,
-)
-if raw_count != 1:
-    raise SystemExit("Could not replace const raw dataset in index.html")
-
-html, catalyst_count = re.subn(
-    r"const catalysts=\{.*?\};\s*function catalystFor",
-    "const catalysts=" + json.dumps(catalysts, ensure_ascii=False, separators=(",", ":")) + ";\nfunction catalystFor",
-    html,
-    count=1,
-    flags=re.S,
-)
-if catalyst_count != 1:
-    raise SystemExit("Could not replace catalyst dataset in index.html")
-
-stamp = datetime.now(timezone.utc).strftime("%d %b %Y · %H:%M UTC")
-html = re.sub(
-    r'<div class="badge">.*?</div>',
-    f'<div class="badge">Market radar · {stamp}</div>',
-    html,
-    count=1,
-)
-html = re.sub(
-    r'<div class="footer">.*?</div>',
-    '<div class="footer">Datakälla: TradingView Swedish market scanner. Momentum Radar räknar en egen aggressiv ranking från dagsrörelse, 5D/1M/3M performance, relativ volym och bolagsstorlek. KÖP / AVVAKTA / SÄLJ är en deterministisk teknisk screening-signal, inte personlig investeringsrådgivning. Data kan vara fördröjd och ska inte användas som exekveringskurs. First North-status verifieras ännu inte separat.</div>',
-    html,
-    count=1,
-    flags=re.S,
-)
-
-html = patch_signal_ui(html)
-INDEX.write_text(html, encoding="utf-8")
-print(
-    f"Updated {len(stocks)} stocks from {len(candidates)} Swedish candidates; "
-    f"top={selected[0]['ticker']} score={selected[0]['_score']}"
-)
+    sym=str(row.get("s") or ""); vals=row.get("d") or []
+    if not sym or len(vals)!=len(COLUMNS):continue
+    d=dict(zip(COLUMNS,vals)); price=number(d.get("close"),None)
+    if not price or price<=0:continue
+    ticker=str(d.get("name") or sym.split(":")[-1]).strip(); name=str(d.get("description") or ticker).strip()
+    d1=number(d.get("change"));d5=number(d.get("Perf.5D"));m1=number(d.get("Perf.1M"));m3=number(d.get("Perf.3M"));vol=number(d.get("volume"));rv=number(d.get("relative_volume_10d_calc"));mc=number(d.get("market_cap_basic"),None);cap=mc/1e6 if mc else None;pe=number(d.get("price_earnings_ttm"),None)
+    if vol<250 and rv<.5:continue
+    candidates.append({"ticker":ticker,"name":name,"change":d1,"change5d":d5,"change1m":m1,"change3m":m3,"price":price,"volume_raw":vol,"relvol":rv,"mcap":cap,"pe":pe,"sector":str(d.get("sector") or d.get("exchange") or "Sweden"),"_score":momentum_score(d1,d5,m1,m3,rv,cap)})
+pool=[x for x in candidates if x["change"]>0] or candidates
+selected=sorted(pool,key=lambda x:(x["_score"],x["change"],x["relvol"]),reverse=True)[:20]
+if not selected:raise SystemExit(0)
+stocks=[]; catalysts={}
+for x in selected:
+    stocks.append({"ticker":x["ticker"],"name":x["name"],"change":round(x["change"],2),"change5d":round(x["change5d"],2),"change1m":round(x["change1m"],2),"change3m":round(x["change3m"],2),"price":round(x["price"],4),"volume":volume_label(x["volume_raw"]),"relvol":round(x["relvol"],2),"mcap":round(x["mcap"],2) if x["mcap"] else None,"pe":round(x["pe"],2) if x["pe"] else None,"sector":x["sector"]})
+    if x["change"]>=10:
+        news=find_catalyst(x["name"],x["ticker"],x["change"],x["relvol"])
+        if news:
+            catalysts[x["ticker"]]=[news["type"],f"{news['confidence']}%",f"{news['headline']} Catalyst Strength {news['strength']}/100. {news['note']}",f"{news['source']}|{news['url']}"]
+        elif x["relvol"]>=2:
+            catalysts[x["ticker"]]=["Volymexplosion","Medel",f"Aktien stiger {x['change']:.1f}% med relativ volym {x['relvol']:.1f}x. Ingen tidsnära verifierbar nyhetskatalysator hittades.","Pris/volymklassificering"]
+        elif x["relvol"]<.5:
+            catalysts[x["ticker"]]=["Likviditetsdriven rörelse","Medel",f"Aktien stiger {x['change']:.1f}% men relativ volym är bara {x['relvol']:.2f}x. Tunn handel kan förstora rörelsen.","Pris/volymklassificering"]
+        else:
+            catalysts[x["ticker"]]=["Ingen verifierad katalysator","Låg",f"Aktien stiger {x['change']:.1f}%, men ingen tillräckligt relevant tidsnära nyhet hittades.","Dashboarden gissar inte"]
+html=patch_catalyst_ui(INDEX.read_text(encoding="utf-8"))
+html,n=re.subn(r"const raw = \[.*?\];\s*const catalysts=","const raw = "+json.dumps(stocks,ensure_ascii=False,separators=(",",":"))+";\nconst catalysts=",html,count=1,flags=re.S)
+if n!=1:raise SystemExit("raw replacement failed")
+html,n=re.subn(r"const catalysts=\{.*?\};\s*function catalystFor","const catalysts="+json.dumps(catalysts,ensure_ascii=False,separators=(",",":"))+";\nfunction catalystFor",html,count=1,flags=re.S)
+if n!=1:raise SystemExit("catalyst replacement failed")
+# Enhance expanded catalyst panel: source becomes clickable when URL is present.
+old='<div class="whywarn">${c[3]}</div>'
+new='<div class="whywarn">${(()=>{const p=String(c[3]||"").split("|");return p[1]?`${p[0]} · <a class="cat-link" href="${p[1]}" target="_blank" rel="noopener">Öppna källa ↗</a>`:p[0]})()}</div>'
+if old in html:html=html.replace(old,new,1)
+stamp=datetime.now(timezone.utc).strftime("%d %b %Y · %H:%M UTC")
+html=re.sub(r'<div class="badge">.*?</div>',f'<div class="badge">Market radar · {stamp}</div>',html,count=1)
+html=re.sub(r'<div class="footer">.*?</div>','<div class="footer">Datakälla: TradingView Swedish market scanner + tidsnära publik nyhetsdiscovery. Catalyst Intelligence klassificerar möjliga orsaker och visar confidence/strength; korrelation är inte bevisad kausalitet. KÖP / AVVAKTA / SÄLJ är teknisk screening, inte personlig investeringsrådgivning.</div>',html,count=1,flags=re.S)
+INDEX.write_text(html,encoding="utf-8")
+print(f"Updated {len(stocks)} stocks; catalyst matches={sum(1 for v in catalysts.values() if v[0] not in ('Volymexplosion','Likviditetsdriven rörelse','Ingen verifierad katalysator'))}")
