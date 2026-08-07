@@ -6,10 +6,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/update_market.py'
-      - 'scripts/update_nasdaq.py'
-      - 'scripts/patch_nasdaq_ui.py'
-      - 'scripts/patch_nasdaq_layout.py'
-      - 'scripts/patch_nasdaq_view_toggle.py'
+      - 'scripts/update_sweden_large_cap.py'
       - 'scripts/patch_shared_market_ui.py'
       - 'scripts/catalyst_intelligence.py'
       - 'scripts/patch_catalyst_signal.py'
@@ -37,7 +34,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Refresh Swedish market radar
+      - name: Refresh Swedish high-risk radar
         env:
           EODHD_API_TOKEN: ${{ secrets.EODHD_API_TOKEN }}
         run: python scripts/update_market.py
@@ -48,32 +45,23 @@ jobs:
       - name: Apply approved light reference design
         run: python scripts/apply_reference_design.py
 
-      - name: Install multi-market navigation
+      - name: Install Swedish market navigation
         run: python scripts/patch_market_navigation.py
 
-      - name: Generate NASDAQ Top 50 radar
-        run: python scripts/update_nasdaq.py
+      - name: Generate Sweden Large Cap 50 radar
+        run: python scripts/update_sweden_large_cap.py
 
-      - name: Correct NASDAQ units and filters
-        run: python scripts/patch_nasdaq_ui.py
-
-      - name: Apply approved NASDAQ reference layout
-        run: python scripts/patch_nasdaq_layout.py
-
-      - name: Install real NASDAQ table compact toggle
-        run: python scripts/patch_nasdaq_view_toggle.py
-
-      - name: Enforce shared Sweden/NASDAQ UI parity
+      - name: Enforce shared Swedish market UI parity
         run: python scripts/patch_shared_market_ui.py
 
       - name: Commit refreshed dashboards
         run: |
-          if git diff --quiet -- index.html nasdaq.html; then
+          if git diff --quiet -- index.html sweden-large-cap.html nasdaq.html; then
             echo "No dashboard data change"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html nasdaq.html
-          git commit -m "Refresh Sweden and NASDAQ market radars"
+          git add index.html sweden-large-cap.html nasdaq.html
+          git commit -m "Refresh Swedish market radars"
           git push
