@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/update_market.py'
+      - 'scripts/catalyst_intelligence.py'
+      - 'scripts/patch_catalyst_signal.py'
       - '.github/workflows/refresh-market.yml'
   schedule:
     # Every 15 minutes around Stockholm market hours, Monday-Friday.
@@ -34,6 +36,9 @@ jobs:
         env:
           EODHD_API_TOKEN: ${{ secrets.EODHD_API_TOKEN }}
         run: python scripts/update_market.py
+
+      - name: Apply catalyst-aware trade signal
+        run: python scripts/patch_catalyst_signal.py
 
       - name: Commit refreshed dashboard
         run: |
