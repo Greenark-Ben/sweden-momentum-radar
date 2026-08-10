@@ -59,8 +59,12 @@ if 'Approved Momentum Radar light reference UI' not in html:
 else:
     html = re.sub(r'/\* ===== Approved Momentum Radar light reference UI ===== \*/.*?</style>', CSS + '\n</style>', html, count=1, flags=re.S)
 
-# Store the timestamp as HTML data, so CSS never contains a stale hard-coded date.
-html = re.sub(r'<div class="appbar"([^>]*)>', lambda m: '<div class="appbar"' + re.sub(r'\sdata-refresh-label="[^"]*"', '', m.group(1)) + f' data-refresh-label="▣  {refresh_label}">', html, count=1)
+# Store the timestamp on the actual header element, so CSS always has a real value to render.
+pattern = r'<header class="appbar"(?:\s+data-refresh-label="[^"]*")?>'
+replacement = f'<header class="appbar" data-refresh-label="▣  {refresh_label}">'
+html, count = re.subn(pattern, replacement, html, count=1)
+if count != 1:
+    raise SystemExit('Could not locate appbar header for refresh timestamp')
 
 INDEX.write_text(html, encoding='utf-8')
 print(f'Approved light reference design applied; refresh timestamp={refresh_label}')
