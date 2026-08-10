@@ -9,6 +9,7 @@ from catalyst_intelligence import find_catalyst
 INDEX = Path("index.html")
 TV_URL = "https://scanner.tradingview.com/sweden/scan"
 COLUMNS = ["name","description","close","change","volume","relative_volume_10d_calc","market_cap_basic","price_earnings_ttm","sector","Perf.5D","Perf.1M","Perf.3M","exchange","type","subtype"]
+TARGET_COUNT = 50
 
 def post_json(url,payload):
     body=json.dumps(payload,separators=(",",":")).encode()
@@ -35,7 +36,7 @@ def patch_catalyst_ui(html):
         html=html.replace(".footer{margin:20px 0", ".cat-strength{display:inline-block;margin-left:8px;padding:3px 7px;border-radius:999px;background:#e8eee9;color:#315c49;font-size:10px;font-weight:800}.cat-link{display:inline-block;margin-top:8px;font-size:11px;font-weight:750;color:var(--forest);text-decoration:none}.cat-link:hover{text-decoration:underline}.footer{margin:20px 0")
     return html
 
-payload={"markets":["sweden"],"symbols":{"query":{"types":[]},"tickers":[]},"options":{"lang":"en"},"columns":COLUMNS,"filter":[{"left":"type","operation":"equal","right":"stock"},{"left":"change","operation":"greater","right":-5}],"sort":{"sortBy":"change","sortOrder":"desc"},"range":[0,300]}
+payload={"markets":["sweden"],"symbols":{"query":{"types":[]},"tickers":[]},"options":{"lang":"en"},"columns":COLUMNS,"filter":[{"left":"type","operation":"equal","right":"stock"},{"left":"change","operation":"greater","right":-5}],"sort":{"sortBy":"change","sortOrder":"desc"},"range":[0,500]}
 try:response=post_json(TV_URL,payload)
 except Exception as exc:
     print(f"warning: TradingView unavailable: {exc}");raise SystemExit(0)
@@ -51,7 +52,7 @@ for row in rows:
     if vol<250 and rv<.5:continue
     candidates.append({"ticker":ticker,"name":name,"change":d1,"change5d":d5,"change1m":m1,"change3m":m3,"price":price,"volume_raw":vol,"relvol":rv,"mcap":cap,"pe":pe,"sector":str(d.get("sector") or d.get("exchange") or "Sweden"),"_score":momentum_score(d1,d5,m1,m3,rv,cap)})
 pool=[x for x in candidates if x["change"]>0] or candidates
-selected=sorted(pool,key=lambda x:(x["_score"],x["change"],x["relvol"]),reverse=True)[:20]
+selected=sorted(pool,key=lambda x:(x["_score"],x["change"],x["relvol"]),reverse=True)[:TARGET_COUNT]
 if not selected:raise SystemExit(0)
 stocks=[]; catalysts={}
 for x in selected:
@@ -71,7 +72,6 @@ html,n=re.subn(r"const raw = \[.*?\];\s*const catalysts=","const raw = "+json.du
 if n!=1:raise SystemExit("raw replacement failed")
 html,n=re.subn(r"const catalysts=\{.*?\};\s*function catalystFor","const catalysts="+json.dumps(catalysts,ensure_ascii=False,separators=(",",":"))+";\nfunction catalystFor",html,count=1,flags=re.S)
 if n!=1:raise SystemExit("catalyst replacement failed")
-# Enhance expanded catalyst panel: source becomes clickable when URL is present.
 old='<div class="whywarn">${c[3]}</div>'
 new='<div class="whywarn">${(()=>{const p=String(c[3]||"").split("|");return p[1]?`${p[0]} · <a class="cat-link" href="${p[1]}" target="_blank" rel="noopener">Öppna källa ↗</a>`:p[0]})()}</div>'
 if old in html:html=html.replace(old,new,1)
